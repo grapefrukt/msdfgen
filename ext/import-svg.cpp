@@ -269,7 +269,6 @@ static bool buildFromPath(Shape &shape, const char *pathDef, double size) {
 }
 
 void printToPathElement(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* root, const char *format, ...) {
-
 	va_list myargs;
 	va_start(myargs, format);
 	char buffer[256];
@@ -290,10 +289,43 @@ bool convertShapes(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* root) {
 		REQUIRE(readAttributeAsDouble(cy, circle, "cy"));
 		REQUIRE(readAttributeAsDouble(r, circle, "r"));
 
-		printToPathElement(doc, root, "M%.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fZ",
+		printToPathElement(doc, root, "M%.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2f Z",
 			cx, cy - r, r, r,
 			cx, cy + r, r, r,
 			cx, cy - r);
+	}
+
+	tinyxml2::XMLElement *ellipse = root->FirstChildElement("ellipse");
+	if (ellipse) {
+		double cx, cy, rx, ry;
+		REQUIRE(readAttributeAsDouble(cx, ellipse, "cx"));
+		REQUIRE(readAttributeAsDouble(cy, ellipse, "cy"));
+		REQUIRE(readAttributeAsDouble(rx, ellipse, "rx"));
+		REQUIRE(readAttributeAsDouble(ry, ellipse, "ry"));
+
+		printToPathElement(doc, root, "M %.2f %.2f A %.2f %.2f 0 1 0 %.2f %.2f A %.2f %.2f 0 1 0 %.2f %.2f Z",
+			cx, cx - ry, 
+			rx, ry, cx, cy + ry,
+			rx, ry, cx, cy + ry);
+	}
+
+	tinyxml2::XMLElement *rect = root->FirstChildElement("rect");
+	if (rect) {
+		double width, height, x, y;
+		REQUIRE(readAttributeAsDouble(width, rect, "width"));
+		REQUIRE(readAttributeAsDouble(height, rect, "height"));
+		REQUIRE(readAttributeAsDouble(x, rect, "x"));
+		REQUIRE(readAttributeAsDouble(y, rect, "y"));
+		
+		printToPathElement(doc, root, "M%.2f %.2fH%.2fV%.2fH%.2f Z",
+			x, y, x + width, y + height, x
+		);
+	}
+
+	tinyxml2::XMLElement *polygon = root->FirstChildElement("polygon");
+	if (polygon) {
+		const char *points = polygon->Attribute("points");
+		printToPathElement(doc, root, "M %s Z", points);
 	}
 
 	return true;
