@@ -267,14 +267,7 @@ static bool buildFromPath(Shape &shape, const char *pathDef, double size) {
     return true;
 }
 
-bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *dimensions) {
-    tinyxml2::XMLDocument doc;
-    if (doc.LoadFile(filename))
-        return false;
-    tinyxml2::XMLElement *root = doc.FirstChildElement("svg");
-    if (!root)
-        return false;
-
+bool convertShapes(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* root) {
 	// transform any circle elements into path elements
 	tinyxml2::XMLElement *circle = root->FirstChildElement("circle");
 	if (circle) {
@@ -282,17 +275,31 @@ bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *d
 		REQUIRE(readAttributeAsDouble(cx, circle, "cx"));
 		REQUIRE(readAttributeAsDouble(cy, circle, "cy"));
 		REQUIRE(readAttributeAsDouble(r, circle, "r"));
-		tinyxml2::XMLElement *element = doc.NewElement("path");
+
 		char buffer[256];
 		snprintf(buffer, sizeof(buffer), "M%.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fZ",
 			cx, cy - r, r, r,
 			cx, cy + r, r, r,
 			cx, cy - r);
 
+		tinyxml2::XMLElement *element = doc->NewElement("path");
 		element->SetAttribute("d", buffer);
 		root->InsertFirstChild(element);
 	}
-	
+
+	return true;
+}
+
+bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *dimensions) {
+    tinyxml2::XMLDocument* doc = new tinyxml2::XMLDocument();
+    if (doc->LoadFile(filename))
+        return false;
+    tinyxml2::XMLElement *root = doc->FirstChildElement("svg");
+    if (!root)
+        return false;
+
+	if (!convertShapes(doc, root)) return false;
+		
     tinyxml2::XMLElement *path = NULL;
     if (pathIndex > 0) {
         path = root->FirstChildElement("path");
@@ -330,7 +337,10 @@ bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *d
     }
     if (dimensions)
         *dimensions = dims;
-    return buildFromPath(output, pd, dims.length());
+
+	bool result = buildFromPath(output, pd, dims.length());
+	delete doc;
+	return result;
 }
 
 }
