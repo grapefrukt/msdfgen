@@ -3,6 +3,7 @@
 #include "import-svg.h"
 
 #include <cstdio>
+#include <stdarg.h>
 #include <tinyxml2.h>
 #include "../core/arithmetics.hpp"
 
@@ -267,6 +268,19 @@ static bool buildFromPath(Shape &shape, const char *pathDef, double size) {
     return true;
 }
 
+void printToPathElement(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* root, const char *format, ...) {
+
+	va_list myargs;
+	va_start(myargs, format);
+	char buffer[256];
+	vsnprintf(buffer, sizeof(buffer), format, myargs);
+	va_end(myargs);
+
+	tinyxml2::XMLElement *element = doc->NewElement("path");
+	element->SetAttribute("d", buffer);
+	root->InsertFirstChild(element);
+}
+
 bool convertShapes(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* root) {
 	// transform any circle elements into path elements
 	tinyxml2::XMLElement *circle = root->FirstChildElement("circle");
@@ -276,15 +290,10 @@ bool convertShapes(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* root) {
 		REQUIRE(readAttributeAsDouble(cy, circle, "cy"));
 		REQUIRE(readAttributeAsDouble(r, circle, "r"));
 
-		char buffer[256];
-		snprintf(buffer, sizeof(buffer), "M%.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fZ",
+		printToPathElement(doc, root, "M%.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fZ",
 			cx, cy - r, r, r,
 			cx, cy + r, r, r,
 			cx, cy - r);
-
-		tinyxml2::XMLElement *element = doc->NewElement("path");
-		element->SetAttribute("d", buffer);
-		root->InsertFirstChild(element);
 	}
 
 	return true;
