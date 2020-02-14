@@ -62,6 +62,11 @@ static bool readDouble(double &output, const char *&pathDef) {
     return false;
 }
 
+static bool readAttributeAsDouble(double &output, tinyxml2::XMLElement *element, const char *name) {
+	const char* attr = element->Attribute(name);
+	return readDouble(output, attr);
+}
+
 static bool readBool(bool &output, const char *&pathDef) {
     skipExtraChars(pathDef);
     int shift;
@@ -270,6 +275,24 @@ bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *d
     if (!root)
         return false;
 
+	// transform any circle elements into path elements
+	tinyxml2::XMLElement *circle = root->FirstChildElement("circle");
+	if (circle) {
+		double cx, cy, r;
+		REQUIRE(readAttributeAsDouble(cx, circle, "cx"));
+		REQUIRE(readAttributeAsDouble(cy, circle, "cy"));
+		REQUIRE(readAttributeAsDouble(r, circle, "r"));
+		tinyxml2::XMLElement *element = doc.NewElement("path");
+		char buffer[256];
+		snprintf(buffer, sizeof(buffer), "M%.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fZ",
+			cx, cy - r, r, r,
+			cx, cy + r, r, r,
+			cx, cy - r);
+
+		element->SetAttribute("d", buffer);
+		root->InsertFirstChild(element);
+	}
+	
     tinyxml2::XMLElement *path = NULL;
     if (pathIndex > 0) {
         path = root->FirstChildElement("path");
