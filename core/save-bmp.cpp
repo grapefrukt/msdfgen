@@ -34,7 +34,7 @@ static bool writeValue(FILE *file, T value) {
 }
 
 static bool writeBmpHeader(FILE *file, int width, int height, int &paddedWidth) {
-    paddedWidth = 3*width+3&~3;
+    paddedWidth = (3*width+3)&~3;
     const uint32_t bitmapStart = 54;
     const uint32_t bitmapSize = paddedWidth*height;
     const uint32_t fileSize = bitmapStart+bitmapSize;
@@ -108,6 +108,11 @@ bool saveBmp(const BitmapConstRef<byte, 3> &bitmap, const char *filename) {
     return !fclose(file);
 }
 
+bool saveBmp(const BitmapConstRef<byte, 4> &bitmap, const char *filename) {
+    // RGBA not supported by the BMP format
+    return false;
+}
+
 bool saveBmp(const BitmapConstRef<float, 1> &bitmap, const char *filename) {
     FILE *file = fopen(filename, "wb");
     if (!file)
@@ -154,6 +159,11 @@ bool saveBmp(const BitmapConstRef<float, 3> &bitmap, const char *filename) {
     }
 
     return !fclose(file);
+}
+
+bool saveBmp(const BitmapConstRef<float, 4> &bitmap, const char *filename) {
+    // RGBA not supported by the BMP format
+    return false;
 }
 
 }

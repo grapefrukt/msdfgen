@@ -46,6 +46,10 @@ QuadraticSegment::QuadraticSegment(Point2 p0, Point2 p1, Point2 p2, EdgeColor ed
 }
 
 CubicSegment::CubicSegment(Point2 p0, Point2 p1, Point2 p2, Point2 p3, EdgeColor edgeColor) : EdgeSegment(edgeColor) {
+    if ((p1 == p0 || p1 == p3) && (p2 == p0 || p2 == p3)) {
+        p1 = mix(p0, p3, 1/3.);
+        p2 = mix(p0, p3, 2/3.);
+    }
     p[0] = p0;
     p[1] = p1;
     p[2] = p2;
@@ -97,6 +101,38 @@ Vector2 CubicSegment::direction(double param) const {
     return tangent;
 }
 
+Vector2 LinearSegment::directionChange(double param) const {
+    return Vector2();
+}
+
+Vector2 QuadraticSegment::directionChange(double param) const {
+    return (p[2]-p[1])-(p[1]-p[0]);
+}
+
+Vector2 CubicSegment::directionChange(double param) const {
+    return mix((p[2]-p[1])-(p[1]-p[0]), (p[3]-p[2])-(p[2]-p[1]), param);
+}
+
+double LinearSegment::length() const {
+    return (p[1]-p[0]).length();
+}
+
+double QuadraticSegment::length() const {
+    Vector2 ab = p[1]-p[0];
+    Vector2 br = p[2]-p[1]-ab;
+    double abab = dotProduct(ab, ab);
+    double abbr = dotProduct(ab, br);
+    double brbr = dotProduct(br, br);
+    double abLen = sqrt(abab);
+    double brLen = sqrt(brbr);
+    double crs = crossProduct(ab, br);
+    double h = sqrt(abab+abbr+abbr+brbr);
+    return (
+        brLen*((abbr+brbr)*h-abbr*abLen)+
+        crs*crs*log((brLen*h+abbr+brbr)/(brLen*abLen+abbr))
+    )/(brbr*brLen);
+}
+
 SignedDistance LinearSegment::signedDistance(Point2 origin, double &param) const {
     Vector2 aq = origin-p[0];
     Vector2 ab = p[1]-p[0];
@@ -127,18 +163,18 @@ SignedDistance QuadraticSegment::signedDistance(Point2 origin, double &param) co
     param = -dotProduct(qa, epDir)/dotProduct(epDir, epDir);
     {
         epDir = direction(1);
-        double distance = nonZeroSign(crossProduct(epDir, p[2]-origin))*(p[2]-origin).length(); // distance from B
-        if (fabs(distance) < fabs(minDistance)) {
-            minDistance = distance;
+        double distance = (p[2]-origin).length(); // distance from B
+        if (distance < fabs(minDistance)) {
+            minDistance = nonZeroSign(crossProduct(epDir, p[2]-origin))*distance;
             param = dotProduct(origin-p[1], epDir)/dotProduct(epDir, epDir);
         }
     }
     for (int i = 0; i < solutions; ++i) {
         if (t[i] > 0 && t[i] < 1) {
-            Point2 qe = p[0]+2*t[i]*ab+t[i]*t[i]*br-origin;
-            double distance = nonZeroSign(crossProduct(p[2]-p[0], qe))*qe.length();
-            if (fabs(distance) <= fabs(minDistance)) {
-                minDistance = distance;
+            Point2 qe = qa+2*t[i]*ab+t[i]*t[i]*br;
+            double distance = qe.length();
+            if (distance <= fabs(minDistance)) {
+                minDistance = nonZeroSign(crossProduct(ab+t[i]*br, qe))*distance;
                 param = t[i];
             }
         }
@@ -163,30 +199,29 @@ SignedDistance CubicSegment::signedDistance(Point2 origin, double &param) const 
     param = -dotProduct(qa, epDir)/dotProduct(epDir, epDir);
     {
         epDir = direction(1);
-        double distance = nonZeroSign(crossProduct(epDir, p[3]-origin))*(p[3]-origin).length(); // distance from B
-        if (fabs(distance) < fabs(minDistance)) {
-            minDistance = distance;
+        double distance = (p[3]-origin).length(); // distance from B
+        if (distance < fabs(minDistance)) {
+            minDistance = nonZeroSign(crossProduct(epDir, p[3]-origin))*distance;
             param = dotProduct(epDir-(p[3]-origin), epDir)/dotProduct(epDir, epDir);
         }
     }
     // Iterative minimum distance search
     for (int i = 0; i <= MSDFGEN_CUBIC_SEARCH_STARTS; ++i) {
         double t = (double) i/MSDFGEN_CUBIC_SEARCH_STARTS;
-        for (int step = 0;; ++step) {
-            Vector2 qe = p[0]+3*t*ab+3*t*t*br+t*t*t*as-origin; // do not simplify with qa !!!
-            double distance = nonZeroSign(crossProduct(direction(t), qe))*qe.length();
-            if (fabs(distance) < fabs(minDistance)) {
-                minDistance = distance;
+        Vector2 qe = qa+3*t*ab+3*t*t*br+t*t*t*as;
+        for (int step = 0; step < MSDFGEN_CUBIC_SEARCH_STEPS; ++step) {
+            // Improve t
+            Vector2 d1 = 3*ab+6*t*br+3*t*t*as;
+            Vector2 d2 = 6*br+6*t*as;
+            t -= dotProduct(qe, d1)/(dotProduct(d1, d1)+dotProduct(qe, d2));
+            if (t <= 0 || t >= 1)
+                break;
+            qe = qa+3*t*ab+3*t*t*br+t*t*t*as;
+            double distance = qe.length();
+            if (distance < fabs(minDistance)) {
+                minDistance = nonZeroSign(crossProduct(d1, qe))*distance;
                 param = t;
             }
-            if (step == MSDFGEN_CUBIC_SEARCH_STEPS)
-                break;
-            // Improve t
-            Vector2 d1 = 3*as*t*t+6*br*t+3*ab;
-            Vector2 d2 = 6*as*t+6*br;
-            t -= dotProduct(qe, d1)/(dotProduct(d1, d1)+dotProduct(qe, d2));
-            if (t < 0 || t > 1)
-                break;
         }
     }
 
@@ -228,7 +263,7 @@ int QuadraticSegment::scanlineIntersections(double x[3], int dy[3], double y) co
         if (solutions >= 2 && t[0] > t[1])
             tmp = t[0], t[0] = t[1], t[1] = tmp;
         for (int i = 0; i < solutions && total < 2; ++i) {
-            if (t[i] > 0 && t[i] < 1) {
+            if (t[i] >= 0 && t[i] <= 1) {
                 x[total] = p[0].x+2*t[i]*ab.x+t[i]*t[i]*br.x;
                 if (nextDY*(ab.y+t[i]*br.y) >= 0) {
                     dy[total++] = nextDY;
@@ -253,8 +288,11 @@ int QuadraticSegment::scanlineIntersections(double x[3], int dy[3], double y) co
     if (nextDY != (y >= p[2].y ? 1 : -1)) {
         if (total > 0)
             --total;
-        else
+        else {
+            if (fabs(p[2].y-y) < fabs(p[0].y-y))
+                x[total] = p[2].x;
             dy[total++] = nextDY;
+        }
     }
     return total;
 }
@@ -287,7 +325,7 @@ int CubicSegment::scanlineIntersections(double x[3], int dy[3], double y) const 
             }
         }
         for (int i = 0; i < solutions && total < 3; ++i) {
-            if (t[i] > 0 && t[i] < 1) {
+            if (t[i] >= 0 && t[i] <= 1) {
                 x[total] = p[0].x+3*t[i]*ab.x+3*t[i]*t[i]*br.x+t[i]*t[i]*t[i]*as.x;
                 if (nextDY*(ab.y+2*t[i]*br.y+t[i]*t[i]*as.y) >= 0) {
                     dy[total++] = nextDY;
@@ -312,8 +350,11 @@ int CubicSegment::scanlineIntersections(double x[3], int dy[3], double y) const 
     if (nextDY != (y >= p[3].y ? 1 : -1)) {
         if (total > 0)
             --total;
-        else
+        else {
+            if (fabs(p[3].y-y) < fabs(p[0].y-y))
+                x[total] = p[3].x;
             dy[total++] = nextDY;
+        }
     }
     return total;
 }
@@ -325,12 +366,12 @@ static void pointBounds(Point2 p, double &l, double &b, double &r, double &t) {
     if (p.y > t) t = p.y;
 }
 
-void LinearSegment::bounds(double &l, double &b, double &r, double &t) const {
+void LinearSegment::bound(double &l, double &b, double &r, double &t) const {
     pointBounds(p[0], l, b, r, t);
     pointBounds(p[1], l, b, r, t);
 }
 
-void QuadraticSegment::bounds(double &l, double &b, double &r, double &t) const {
+void QuadraticSegment::bound(double &l, double &b, double &r, double &t) const {
     pointBounds(p[0], l, b, r, t);
     pointBounds(p[2], l, b, r, t);
     Vector2 bot = (p[1]-p[0])-(p[2]-p[1]);
@@ -346,7 +387,7 @@ void QuadraticSegment::bounds(double &l, double &b, double &r, double &t) const 
     }
 }
 
-void CubicSegment::bounds(double &l, double &b, double &r, double &t) const {
+void CubicSegment::bound(double &l, double &b, double &r, double &t) const {
     pointBounds(p[0], l, b, r, t);
     pointBounds(p[3], l, b, r, t);
     Vector2 a0 = p[1]-p[0];
@@ -362,6 +403,27 @@ void CubicSegment::bounds(double &l, double &b, double &r, double &t) const {
     for (int i = 0; i < solutions; ++i)
         if (params[i] > 0 && params[i] < 1)
             pointBounds(point(params[i]), l, b, r, t);
+}
+
+void LinearSegment::reverse() {
+    Point2 tmp = p[0];
+    p[0] = p[1];
+    p[1] = tmp;
+}
+
+void QuadraticSegment::reverse() {
+    Point2 tmp = p[0];
+    p[0] = p[2];
+    p[2] = tmp;
+}
+
+void CubicSegment::reverse() {
+    Point2 tmp = p[0];
+    p[0] = p[3];
+    p[3] = tmp;
+    tmp = p[1];
+    p[1] = p[2];
+    p[2] = tmp;
 }
 
 void LinearSegment::moveStartPoint(Point2 to) {
@@ -419,6 +481,24 @@ void CubicSegment::splitInThirds(EdgeSegment *&part1, EdgeSegment *&part2, EdgeS
         mix(mix(mix(p[0], p[1], 2/3.), mix(p[1], p[2], 2/3.), 2/3.), mix(mix(p[1], p[2], 2/3.), mix(p[2], p[3], 2/3.), 2/3.), 1/3.),
         point(2/3.), color);
     part3 = new CubicSegment(point(2/3.), mix(mix(p[1], p[2], 2/3.), mix(p[2], p[3], 2/3.), 2/3.), p[2] == p[3] ? p[3] : mix(p[2], p[3], 2/3.), p[3], color);
+}
+
+EdgeSegment * QuadraticSegment::convertToCubic() const {
+    return new CubicSegment(p[0], mix(p[0], p[1], 2/3.), mix(p[1], p[2], 1/3.), p[2], color);
+}
+
+void CubicSegment::deconverge(int param, double amount) {
+    Vector2 dir = direction(param);
+    Vector2 normal = dir.getOrthonormal();
+    double h = dotProduct(directionChange(param)-dir, normal);
+    switch (param) {
+        case 0:
+            p[1] += amount*(dir+sign(h)*sqrt(fabs(h))*normal);
+            break;
+        case 1:
+            p[2] -= amount*(dir-sign(h)*sqrt(fabs(h))*normal);
+            break;
+    }
 }
 
 }

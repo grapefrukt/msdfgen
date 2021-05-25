@@ -6,31 +6,23 @@
 
 namespace msdfgen {
 
-void rasterize(const BitmapRef<float, 1> &output, const Shape &shape, const Vector2 &scale, const Vector2 &translate, FillRule fillRule) {
-    Point2 p;
+void rasterize(const BitmapRef<float, 1> &output, const Shape &shape, const Projection &projection, FillRule fillRule) {
     Scanline scanline;
     for (int y = 0; y < output.height; ++y) {
         int row = shape.inverseYAxis ? output.height-y-1 : y;
-        p.y = (y+.5)/scale.y-translate.y;
-        shape.scanline(scanline, p.y);
-        for (int x = 0; x < output.width; ++x) {
-            p.x = (x+.5)/scale.x-translate.x;
-            bool fill = scanline.filled(p.x, fillRule);
-            *output(x, row) = (float) fill;
-        }
+        shape.scanline(scanline, projection.unprojectY(y+.5));
+        for (int x = 0; x < output.width; ++x)
+            *output(x, row) = (float) scanline.filled(projection.unprojectX(x+.5), fillRule);
     }
 }
 
-void distanceSignCorrection(const BitmapRef<float, 1> &sdf, const Shape &shape, const Vector2 &scale, const Vector2 &translate, FillRule fillRule) {
-    Point2 p;
+void distanceSignCorrection(const BitmapRef<float, 1> &sdf, const Shape &shape, const Projection &projection, FillRule fillRule) {
     Scanline scanline;
     for (int y = 0; y < sdf.height; ++y) {
         int row = shape.inverseYAxis ? sdf.height-y-1 : y;
-        p.y = (y+.5)/scale.y-translate.y;
-        shape.scanline(scanline, p.y);
+        shape.scanline(scanline, projection.unprojectY(y+.5));
         for (int x = 0; x < sdf.width; ++x) {
-            p.x = (x+.5)/scale.x-translate.x;
-            bool fill = scanline.filled(p.x, fillRule);
+            bool fill = scanline.filled(projection.unprojectX(x+.5), fillRule);
             float &sd = *sdf(x, row);
             if ((sd > .5f) != fill)
                 sd = 1.f-sd;
@@ -38,11 +30,11 @@ void distanceSignCorrection(const BitmapRef<float, 1> &sdf, const Shape &shape, 
     }
 }
 
-void distanceSignCorrection(const BitmapRef<float, 3> &sdf, const Shape &shape, const Vector2 &scale, const Vector2 &translate, FillRule fillRule) {
+template <int N>
+static void multiDistanceSignCorrection(const BitmapRef<float, N> &sdf, const Shape &shape, const Projection &projection, FillRule fillRule) {
     int w = sdf.width, h = sdf.height;
     if (!(w*h))
         return;
-    Point2 p;
     Scanline scanline;
     bool ambiguous = false;
     std::vector<char> matchMap;
@@ -50,11 +42,9 @@ void distanceSignCorrection(const BitmapRef<float, 3> &sdf, const Shape &shape, 
     char *match = &matchMap[0];
     for (int y = 0; y < h; ++y) {
         int row = shape.inverseYAxis ? h-y-1 : y;
-        p.y = (y+.5)/scale.y-translate.y;
-        shape.scanline(scanline, p.y);
+        shape.scanline(scanline, projection.unprojectY(y+.5));
         for (int x = 0; x < w; ++x) {
-            p.x = (x+.5)/scale.x-translate.x;
-            bool fill = scanline.filled(p.x, fillRule);
+            bool fill = scanline.filled(projection.unprojectX(x+.5), fillRule);
             float *msd = sdf(x, row);
             float sd = median(msd[0], msd[1], msd[2]);
             if (sd == .5f)
@@ -66,6 +56,8 @@ void distanceSignCorrection(const BitmapRef<float, 3> &sdf, const Shape &shape, 
                 *match = -1;
             } else
                 *match = 1;
+            if (N >= 4 && (msd[3] > .5f) != fill)
+                msd[3] = 1.f-msd[3];
             ++match;
         }
     }
@@ -92,6 +84,32 @@ void distanceSignCorrection(const BitmapRef<float, 3> &sdf, const Shape &shape, 
             }
         }
     }
+}
+
+void distanceSignCorrection(const BitmapRef<float, 3> &sdf, const Shape &shape, const Projection &projection, FillRule fillRule) {
+    multiDistanceSignCorrection(sdf, shape, projection, fillRule);
+}
+
+void distanceSignCorrection(const BitmapRef<float, 4> &sdf, const Shape &shape, const Projection &projection, FillRule fillRule) {
+    multiDistanceSignCorrection(sdf, shape, projection, fillRule);
+}
+
+// Legacy API
+
+void rasterize(const BitmapRef<float, 1> &output, const Shape &shape, const Vector2 &scale, const Vector2 &translate, FillRule fillRule) {
+    rasterize(output, shape, Projection(scale, translate), fillRule);
+}
+
+void distanceSignCorrection(const BitmapRef<float, 1> &sdf, const Shape &shape, const Vector2 &scale, const Vector2 &translate, FillRule fillRule) {
+    distanceSignCorrection(sdf, shape, Projection(scale, translate), fillRule);
+}
+
+void distanceSignCorrection(const BitmapRef<float, 3> &sdf, const Shape &shape, const Vector2 &scale, const Vector2 &translate, FillRule fillRule) {
+    distanceSignCorrection(sdf, shape, Projection(scale, translate), fillRule);
+}
+
+void distanceSignCorrection(const BitmapRef<float, 4> &sdf, const Shape &shape, const Vector2 &scale, const Vector2 &translate, FillRule fillRule) {
+    distanceSignCorrection(sdf, shape, Projection(scale, translate), fillRule);
 }
 
 }

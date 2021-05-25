@@ -1,4 +1,34 @@
 
+## Version 1.8 (2020-10-17)
+
+- Integrated the Skia library into the project, which is used to preprocess the shape geometry and eliminate any self-intersections and other irregularities previously unsupported by the software
+    - The scanline pass and overlapping contour mode is made obsolete by this step and has been disabled by default. The preprocess step can be disabled by the new `-nopreprocess` switch and the former enabled by `-scanline` and `-overlap` respectively.
+    - The project can be built without the Skia library, forgoing the geometry preprocessing feature. This is controlled by the macro definition `MSDFGEN_USE_SKIA`
+- Significantly improved performance of the core algorithm by reusing results from previously computed pixels
+- Introduced an additional error correction routine which eliminates MSDF artifacts by analytically predicting results of bilinear interpolation
+- Added the possibility to load font glyphs by their index rather than a Unicode value (use the prefix `g` before the character code in `-font` argument)
+- Added `-distanceshift` argument that can be used to adjust the center of the distance range in the output distance field
+- Fixed several errors in the evaluation of curve distances
+- Fixed an issue with paths containing convergent corners (those whose inner angle is zero)
+- The algorithm for pseudo-distance computation slightly changed, fixing certain rare edge cases and improving consistency
+- Added the ability to supply own `FT_Face` handle to the msdfgen library
+- Minor refactor of the core algorithm
+
+### Version 1.7.1 (2020-03-09)
+
+- Fixed an edge case bug in scanline rasterization
+
+## Version 1.7 (2020-03-07)
+
+- Added `mtsdf` mode - a combination of `msdf` with `sdf` in the alpha channel
+- Distance fields can now be stored as uncompressed TIFF image files with floating point precision
+- Bitmap class refactor - template argument split into data type and number of channels, bitmap reference classes introduced
+- Added a secondary "ink trap" edge coloring heuristic, can be selected using `-coloringstrategy inktrap`
+- Added computation of estimated rendering error for a given SDF
+- Added computation of bounding box that includes sharp mitered corners
+- The API for bounds computation of the `Shape` class changed for clarity
+- Fixed several edge case bugs
+
 ## Version 1.6 (2019-04-08)
 
 - Core algorithm rewritten to split up advanced edge selection logic into modular template arguments.
@@ -27,13 +57,13 @@
 ## Version 1.3 (2016-12-07)
 
 - Fixed `-reverseorder` switch.
-- Fixed glyph loading to use the proper method of acquiring the outlines from FreeType.
+- Fixed glyph loading to use the proper method of acquiring outlines from FreeType.
 
 ## Version 1.2 (2016-07-20)
 
 - Added option to specify that shape vertices are listed in reverse order (`-reverseorder`).
 - Added option to set a seed for the edge coloring heuristic (-seed \<n\>), which can be used to adjust the output.
-- Fixed parsing of glyph contours starting that start with a curve control point.
+- Fixed parsing of glyph contours that start with a curve control point.
 
 ## Version 1.1 (2016-05-08)
 
