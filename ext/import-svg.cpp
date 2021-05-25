@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <tinyxml2.h>
 #include "../core/arithmetics.hpp"
+#include <cstdarg>
 
 #define ARC_SEGMENTS_PER_PI 2
 #define ENDPOINT_SNAP_RANGE_PROPORTION (1/16384.)
