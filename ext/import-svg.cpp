@@ -96,11 +96,9 @@ bool parseShape(tinyxml2::XMLElement* element, SkPath &output) {
         formatAsPath(asPath, "M %s Z", points);
 	} else if (tinyxml2::XMLUtil::StringEqual(element->Name(), "path")) {
         formatAsPath(asPath, "%s", element->Attribute("d"));
-    }
-
-    if (asPath == NULL) {
-        std::cout << "don't know how to parse: " << element->Value() << std::endl;
-        return false;
+    } else {
+        std::cout << "don't know how to parse: " << element->Value() <<  ", skipping." << std::endl;
+        return true;
     }
 
     if (!SkParsePath::FromSVGString(asPath, &output)) {
@@ -114,7 +112,7 @@ bool parseShape(tinyxml2::XMLElement* element, SkPath &output) {
 bool recurseSvg(SkPath& everything, tinyxml2::XMLElement* root) {
     for (tinyxml2::XMLElement* e = root->FirstChildElement(); e != NULL; e = e->NextSiblingElement()) {
         if (tinyxml2::XMLUtil::StringEqual(e->Name(), "g")) {
-            recurseSvg(everything, e);
+            if (!recurseSvg(everything, e)) return false;
             continue;
         }
 
@@ -124,10 +122,11 @@ bool recurseSvg(SkPath& everything, tinyxml2::XMLElement* root) {
             std::cout << "failed to convert: " << e->Value() << std::endl;
             return false;
         }
-        std::cout << "found element: " << e->Value() << std::endl;
 
         Op(everything, skPath, kUnion_SkPathOp, &everything);
     }
+
+    return true;
 }
 
 bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *dimensions) {
@@ -138,22 +137,20 @@ bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *d
     if (!root)
         return false;
 
-    SkPath skPathEverything;
+    SkPath skPath;
 
-    recurseSvg(skPathEverything, root);
+    if (!recurseSvg(skPath, root)) return false;
 	
     SkString debugOut;
 
-    SkParsePath::ToSVGString(skPathEverything, &debugOut);
-    std::cout << "svg as parsed and merged: " << std::endl << debugOut.c_str() << std::endl;
-
-    Simplify(skPathEverything, &skPathEverything);
-    AsWinding(skPathEverything, &skPathEverything);
+    Simplify(skPath, &skPath);
+    AsWinding(skPath, &skPath);
     
-    SkParsePath::ToSVGString(skPathEverything, &debugOut);
-    std::cout << "svg after processing: " << std::endl << debugOut.c_str() << std::endl;
-       
-    shapeFromSkiaPath(output, skPathEverything);
+    // for reasons i do not understand we need to round-trip to an svg string and back to make circles and ellipses render correctly
+    SkParsePath::ToSVGString(skPath, &debugOut);
+    SkParsePath::FromSVGString(debugOut.c_str(), &skPath);
+
+    shapeFromSkiaPath(output, skPath);
     output.inverseYAxis = true;
 
     return true;
