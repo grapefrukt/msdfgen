@@ -3,22 +3,16 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "import-svg.h"
 
-#include <cstdio>
-#include <tinyxml2.h>
-#include "../core/arithmetics.hpp"
-#include <cstdarg>
-#include <fstream>
+#include <iostream>
 #include <skia/core/SkPath.h>
 #include <skia/core/SkString.h>
 #include <skia/utils/SkParsePath.h>
 #include <skia/pathops/SkPathOps.h>
+#include <tinyxml2.h>
 #include "resolve-shape-geometry.h"
-#include <iostream>
 
 #define ARC_SEGMENTS_PER_PI 2
 #define ENDPOINT_SNAP_RANGE_PROPORTION (1/16384.)
-
-#define STUPID_FIXED_SIZE_BUFFER 2048
 
 namespace msdfgen {
 
@@ -48,13 +42,6 @@ static bool readDouble(double &output, const char *&pathDef) {
 static bool readAttributeAsDouble(double &output, tinyxml2::XMLElement *element, const char *name) {
 	const char* attr = element->Attribute(name);
 	return readDouble(output, attr);
-}
-
-void formatAsPath(char* output, const char* format, ...) {
-    va_list myargs;
-    va_start(myargs, format);
-    vsnprintf(output, STUPID_FIXED_SIZE_BUFFER, format, myargs);
-    va_end(myargs);
 }
 
 bool parseShape(tinyxml2::XMLElement* element, SkPath &output) {
@@ -89,20 +76,23 @@ bool parseShape(tinyxml2::XMLElement* element, SkPath &output) {
         return true;
 	}
 
-    char asPath[STUPID_FIXED_SIZE_BUFFER];
+    std::string asPath;
 
 	if (tinyxml2::XMLUtil::StringEqual(element->Name(), "polygon")) {
-		const char *points = element->Attribute("points");
-        formatAsPath(asPath, "M %s Z", points);
+        asPath.append("M "); 
+        asPath.append(element->Attribute("points")); 
+        asPath.append(" Z");
 	} else if (tinyxml2::XMLUtil::StringEqual(element->Name(), "path")) {
-        formatAsPath(asPath, "%s", element->Attribute("d"));
+        asPath.append(element->Attribute("d"));
     } else {
         std::cout << "don't know how to parse: " << element->Value() <<  ", skipping." << std::endl;
         return true;
     }
 
-    if (!SkParsePath::FromSVGString(asPath, &output)) {
-        std::cout << "skia failed for: " << element->Value() << std::endl;
+    if (!SkParsePath::FromSVGString(asPath.c_str(), &output)) {
+        tinyxml2::XMLPrinter printer;
+        element->Accept(&printer);
+        std::cout << "skia failed for: " << element->Value() << std::endl << printer.CStr() << std::endl;
         return false;
     }
 
