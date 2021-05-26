@@ -7,9 +7,17 @@
 #include <tinyxml2.h>
 #include "../core/arithmetics.hpp"
 #include <cstdarg>
+#include <fstream>
+#include <skia/core/SkPath.h>
+#include <skia/utils/SkParsePath.h>
+#include <skia/pathops/SkPathOps.h>
+#include "resolve-shape-geometry.h"
+#include <iostream>
 
 #define ARC_SEGMENTS_PER_PI 2
 #define ENDPOINT_SNAP_RANGE_PROPORTION (1/16384.)
+
+#define STUPID_FIXED_SIZE_BUFFER 1024
 
 namespace msdfgen {
 
@@ -265,70 +273,91 @@ static bool buildFromPath(Shape &shape, const char *pathDef, double size) {
     return true;
 }
 
-void printToPathElement(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* root, const char *format, ...) {
-	va_list myargs;
-	va_start(myargs, format);
-	char buffer[256];
-	vsnprintf(buffer, sizeof(buffer), format, myargs);
-	va_end(myargs);
-
-	tinyxml2::XMLElement *element = doc->NewElement("path");
-	element->SetAttribute("d", buffer);
-	root->InsertFirstChild(element);
+void printToPathElement(char* output, const char* format, ...) {
+    va_list myargs;
+    va_start(myargs, format);
+    vsnprintf(output, STUPID_FIXED_SIZE_BUFFER, format, myargs);
+    va_end(myargs);
 }
 
-bool convertShapes(tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* root) {
-	// transform any circle elements into path elements
-	tinyxml2::XMLElement *circle = root->FirstChildElement("circle");
-	if (circle) {
+bool convertShapes(tinyxml2::XMLElement* element, char* output) {
+	if (tinyxml2::XMLUtil::StringEqual(element->Name(), "circle")) {
 		double cx, cy, r;
-		REQUIRE(readAttributeAsDouble(cx, circle, "cx"));
-		REQUIRE(readAttributeAsDouble(cy, circle, "cy"));
-		REQUIRE(readAttributeAsDouble(r, circle, "r"));
+		REQUIRE(readAttributeAsDouble(cx, element, "cx"));
+		REQUIRE(readAttributeAsDouble(cy, element, "cy"));
+		REQUIRE(readAttributeAsDouble(r, element, "r"));
 
-		printToPathElement(doc, root, "M%.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2f Z",
+		printToPathElement(output, "M%.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2fA%.2f %.2f 0 1 0 %.2f %.2f Z",
 			cx, cy - r, r, r,
 			cx, cy + r, r, r,
 			cx, cy - r);
+        return true;
 	}
 
-	tinyxml2::XMLElement *ellipse = root->FirstChildElement("ellipse");
-	if (ellipse) {
+	if (tinyxml2::XMLUtil::StringEqual(element->Name(), "ellipse")) {
 		double cx, cy, rx, ry;
-		REQUIRE(readAttributeAsDouble(cx, ellipse, "cx"));
-		REQUIRE(readAttributeAsDouble(cy, ellipse, "cy"));
-		REQUIRE(readAttributeAsDouble(rx, ellipse, "rx"));
-		REQUIRE(readAttributeAsDouble(ry, ellipse, "ry"));
+		REQUIRE(readAttributeAsDouble(cx, element, "cx"));
+		REQUIRE(readAttributeAsDouble(cy, element, "cy"));
+		REQUIRE(readAttributeAsDouble(rx, element, "rx"));
+		REQUIRE(readAttributeAsDouble(ry, element, "ry"));
 
-		printToPathElement(doc, root, "M %.2f %.2f A %.2f %.2f 0 1 0 %.2f %.2f A %.2f %.2f 0 1 0 %.2f %.2f Z",
+		printToPathElement(output, "M %.2f %.2f A %.2f %.2f 0 1 0 %.2f %.2f A %.2f %.2f 0 1 0 %.2f %.2f Z",
 			cx, cx - ry, 
 			rx, ry, cx, cy + ry,
 			rx, ry, cx, cy + ry);
+        return true;
 	}
 
-	tinyxml2::XMLElement *rect = root->FirstChildElement("rect");
-	if (rect) {
+	if (tinyxml2::XMLUtil::StringEqual(element->Name(), "rect")) {
 		double width, height, x, y;
-		REQUIRE(readAttributeAsDouble(width, rect, "width"));
-		REQUIRE(readAttributeAsDouble(height, rect, "height"));
-		REQUIRE(readAttributeAsDouble(x, rect, "x"));
-		REQUIRE(readAttributeAsDouble(y, rect, "y"));
+		REQUIRE(readAttributeAsDouble(width, element, "width"));
+		REQUIRE(readAttributeAsDouble(height, element, "height"));
+		REQUIRE(readAttributeAsDouble(x, element, "x"));
+		REQUIRE(readAttributeAsDouble(y, element, "y"));
 		
-		printToPathElement(doc, root, "M%.2f %.2fH%.2fV%.2fH%.2f Z",
+        printToPathElement(output, "M%.2f %.2fH%.2fV%.2fH%.2f Z",
 			x, y, x + width, y + height, x
 		);
+        return true;
 	}
 
-	tinyxml2::XMLElement *polygon = root->FirstChildElement("polygon");
-	if (polygon) {
-		const char *points = polygon->Attribute("points");
-		printToPathElement(doc, root, "M %s Z", points);
+	if (tinyxml2::XMLUtil::StringEqual(element->Name(), "polygon")) {
+		const char *points = element->Attribute("points");
+        printToPathElement(output, "M %s Z", points);
+        return true;
 	}
 
-	return true;
+    if (tinyxml2::XMLUtil::StringEqual(element->Name(), "path")) {
+        printToPathElement(output, "%s", element->Attribute("d"));
+        return true;
+    }
+
+    return false;
 }
 
 bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *dimensions) {
+    /*std::ifstream t(filename);
+    std::string str;
+
+    t.seekg(0, std::ios::end);
+    str.reserve(t.tellg());
+    t.seekg(0, std::ios::beg);
+
+    str.assign((std::istreambuf_iterator<char>(t)),
+        std::istreambuf_iterator<char>());
+        
+    SkPath skPath;
+    if (!SkParsePath::FromSVGString(str.c_str(), &skPath)) return false;
+    Simplify(skPath, &skPath);
+    //AsWinding(skPath, &skPath);
+
+    shapeFromSkiaPath(output, skPath);
+
+    output.orientContours();
+
+    return true;*/
+
+
     tinyxml2::XMLDocument* doc = new tinyxml2::XMLDocument();
     if (doc->LoadFile(filename))
         return false;
@@ -336,9 +365,35 @@ bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *d
     if (!root)
         return false;
 
-	if (!convertShapes(doc, root)) return false;
-		
-    tinyxml2::XMLElement *path = NULL;
+    SkPath skPathEverything;
+
+    for (tinyxml2::XMLElement* e = root->FirstChildElement(); e != NULL; e = e->NextSiblingElement()) {
+        char converted[STUPID_FIXED_SIZE_BUFFER];
+        if (!convertShapes(e, converted) || converted == NULL) {
+            std::cout << "failed to convert: " << e->Value() << std::endl;
+            return false;
+        }
+        std::cout << "found element: " << e->Value() << " : " << converted << std::endl;
+
+        SkPath skPath;
+        if (!SkParsePath::FromSVGString(converted, &skPath)) {
+            std::cout << "skia failed for: " << e->Value() << std::endl;
+            return false;
+        }
+
+        Op(skPathEverything, skPath, kUnion_SkPathOp, &skPathEverything);
+    }
+	
+    Simplify(skPathEverything, &skPathEverything);
+    AsWinding(skPathEverything, &skPathEverything);
+    shapeFromSkiaPath(output, skPathEverything);
+    output.inverseYAxis = true;
+
+    output.orientContours();
+
+    return true;
+
+    /*tinyxml2::XMLElement *path = NULL;
     if (pathIndex > 0) {
         path = root->FirstChildElement("path");
         if (!path) {
@@ -378,7 +433,7 @@ bool loadSvgShape(Shape &output, const char *filename, int pathIndex, Vector2 *d
 
 	bool result = buildFromPath(output, pd, dims.length());
 	delete doc;
-	return result;
+	return result;*/
 }
 
 }
